@@ -1,0 +1,2032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%230d140d'/%3E%3Cstop offset='100%25' stop-color='%23080b08'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='url(%23g)' stroke='%231a2e1a' stroke-width='0.5'/%3E%3C!-- L --%3E%3Cpath d='M10 7v18h14' stroke='%234a7a5a' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C!-- pulse dot --%3E%3Ccircle cx='25' cy='25' r='2' fill='%234a7a5a'/%3E%3C!-- signal bars --%3E%3Crect x='25' y='16' width='2' height='3' rx='1' fill='%233a6a3a' opacity='0.5'/%3E%3Crect x='25' y='11' width='2' height='2' rx='1' fill='%232a5a2a' opacity='0.25'/%3E%3C/svg%3E">
+<title>Lilith // passive traffic review</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --void: #0a0d0a;
+    --panel: #10140f;
+    --line: #1e2a1c;
+    --line-bright: #2e4028;
+    --text: #d7e4d0;
+    --text-dim: #6d8065;
+    --text-faint: #445040;
+    --signal-low: #4a7a5a;
+    --signal-med: #c9a13b;
+    --signal-high: #c1483d;
+    --signal-high-glow: rgba(193, 72, 61, 0.15);
+    --mono: "IBM Plex Mono", "SF Mono", "Consolas", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--void);
+    color: var(--text);
+    font-family: var(--mono);
+    margin: 0;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.012) 0px,
+      rgba(255,255,255,0.012) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+    z-index: 1000;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 22px;
+    margin-bottom: 22px;
+  }
+  header .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-top: 10px;
+  }
+  .brand { text-align: center; }
+  .brand-mark {
+    font-size: 24px;
+    letter-spacing: 0.08em;
+    color: var(--text);
+    font-weight: 300;
+    text-transform: uppercase;
+  }
+  .brand-mark .l { color: var(--signal-low); font-weight: 600; }
+  .brand-mark .i { color: var(--signal-med); font-weight: 300; font-style: italic; }
+  .brand-mark .li { color: var(--signal-low); font-weight: 400; }
+  .brand-mark .th { color: var(--text-dim); font-weight: 300; letter-spacing: 0.12em; }
+  .brand-sub { color: var(--text-faint); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 4px; }
+  .pulse-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--signal-low);
+    box-shadow: 0 0 8px var(--signal-low);
+    animation: pulse 2.4s ease-in-out infinite;
+    margin-right: 8px;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  .clock { color: var(--text-dim); font-size: 11px; }
+
+  /* ---------- time range selector ---------- */
+  .tr-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    padding: 6px 14px;
+    margin-bottom: 14px;
+    background: var(--panel);
+  }
+  .tr-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    margin-right: 6px;
+  }
+  .tr-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tr-btn:hover { color: var(--text); border-color: var(--line); }
+  .tr-btn.active {
+    background: var(--line);
+    color: var(--text);
+    border-color: var(--line-bright);
+  }
+  .tr-btn.live {
+    color: var(--signal-low);
+    border-color: var(--signal-low);
+  }
+  .tr-btn.live.active {
+    background: rgba(74,122,90,0.2);
+    border-color: var(--signal-low);
+  }
+  .tr-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--line);
+    margin: 0 4px;
+  }
+
+  /* ---------- stat strip ---------- */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    border: 1px solid var(--line);
+    margin-bottom: 22px;
+  }
+  .stat {
+    padding: 14px 16px;
+    border-right: 1px solid var(--line);
+  }
+  .stat:last-child { border-right: none; }
+  .stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-value.hi { color: var(--signal-high); }
+  .stat-value.med { color: var(--signal-med); }
+  .stat-value.lo { color: var(--signal-low); }
+
+  /* ---------- panels ---------- */
+  .panel {
+    border: 1px solid var(--line);
+    margin-bottom: 22px;
+  }
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .panel-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+  }
+  .panel-meta { font-size: 10px; color: var(--text-faint); }
+
+  .filters {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .filter-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .filter-btn:hover { border-color: var(--line-bright); color: var(--text); }
+  .filter-btn.active { background: var(--line); color: var(--text); border-color: var(--line-bright); }
+  .filter-btn.map-btn {
+    color: var(--signal-low);
+    border-color: var(--signal-low);
+    margin-left: 4px;
+    font-size: 11px;
+  }
+  .filter-btn.map-btn:hover { background: rgba(74,122,90,0.15); }
+
+  .search-input {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 10px;
+    width: 150px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-input::placeholder { color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .search-input:focus { border-color: var(--line-bright); }
+  .search-input.has-value { border-color: var(--signal-low); }
+
+  .export-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-left: 4px;
+  }
+  .export-btn:hover { border-color: var(--line-bright); color: var(--text); }
+
+  /* ---------- table ---------- */
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    font-weight: 500;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  tbody td {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    color: var(--text);
+  }
+  tbody tr:hover { background: rgba(255,255,255,0.015); }
+  tbody tr.sev-high { background: var(--signal-high-glow); }
+  tbody tr.sev-high:hover { background: rgba(193, 72, 61, 0.22); }
+  @keyframes flashNew {
+    0% { background: rgba(74, 122, 90, 0.3); }
+    100% { background: transparent; }
+  }
+  tbody tr.row-new { animation: flashNew 1.8s ease-out forwards; }
+  tbody tr.row-new.sev-high { animation: flashNew 1.8s ease-out forwards; }
+
+  .sev-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid;
+  }
+  .sev-badge.high { color: var(--signal-high); border-color: var(--signal-high); }
+  .sev-badge.medium { color: var(--signal-med); border-color: var(--signal-med); }
+  .sev-badge.low { color: var(--signal-low); border-color: var(--signal-low); }
+  .sev-badge.clean { color: var(--text-faint); border-color: var(--text-faint); }
+
+  .stage-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    margin-left: 4px;
+  }
+  .stage-badge.heuristic { background: rgba(74,122,90,0.2); color: var(--signal-low); border: 1px solid rgba(74,122,90,0.3); }
+  .stage-badge.blocklist { background: rgba(193,72,61,0.16); color: #d97a6f; border: 1px solid rgba(193,72,61,0.35); }
+  .stage-badge.reputation { background: rgba(201,161,59,0.15); color: var(--signal-med); border: 1px solid rgba(201,161,59,0.3); }
+  .stage-badge.behavior { background: rgba(68,150,140,0.2); color: #5cb8ad; border: 1px solid rgba(68,150,140,0.35); }
+  .stage-badge.dns { background: rgba(86,138,170,0.18); color: #6fa8c9; border: 1px solid rgba(86,138,170,0.35); }
+  .stage-badge.longlived { background: rgba(150,110,180,0.16); color: #a888c9; border: 1px solid rgba(150,110,180,0.35); }
+  .stage-badge.clean { background: rgba(109,128,101,0.15); color: var(--text-dim); border: 1px solid rgba(109,128,101,0.25); }
+  .stage-badge.whitelist { background: rgba(109,128,101,0.1); color: var(--text-faint); border: 1px solid rgba(109,128,101,0.15); font-style: italic; }
+
+  .res-badge {
+    display: inline-block;
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-left: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .res-badge .num { color: var(--text-dim); }
+  .res-badge .num.hot { color: var(--signal-high); }
+
+  .proc-name { color: var(--text); font-weight: 600; }
+  .proc-exe { color: var(--text-faint); font-size: 11px; display: block; margin-top: 2px; word-break: break-all; }
+  .ip-cell { display: flex; align-items: center; gap: 6px; }
+  .ip {
+    color: var(--text);
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: var(--text-faint);
+    text-underline-offset: 2px;
+    transition: color 0.15s, text-decoration-color 0.15s;
+  }
+  .ip:hover { color: var(--signal-low); text-decoration-color: var(--signal-low); }
+
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text-faint);
+    font-size: 12px;
+    padding: 1px 5px;
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0;
+    transition: all 0.15s;
+  }
+  tr:hover .copy-btn { opacity: 1; }
+  .copy-btn:hover { color: var(--signal-low); border-color: var(--signal-low); }
+  .copy-btn.copied { color: var(--signal-low); border-color: var(--signal-low); opacity: 1; }
+
+  /* investigate button */
+  .inv-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text-faint);
+    font-size: 11px;
+    padding: 1px 5px;
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0;
+    transition: all 0.15s;
+  }
+  tr:hover .inv-btn { opacity: 1; }
+  .inv-btn:hover { color: var(--signal-med); border-color: var(--signal-med); }
+  .inv-btn:disabled { opacity: 0.4; cursor: wait; color: var(--text-faint); border-color: var(--line); }
+
+
+  .investigate-sect {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .investigate-sect:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .investigate-sect-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+  .investigate-value {
+    font-size: 13px;
+    color: var(--text);
+    font-family: var(--mono);
+  }
+  .investigate-value.null { color: var(--text-faint); font-style: italic; }
+  .investigate-value.error { color: var(--signal-high); }
+  .investigate-open-port {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    margin: 2px 3px;
+    border: 1px solid var(--signal-low);
+    color: var(--signal-low);
+    font-size: 11px;
+    font-family: var(--mono);
+  }
+  .investigate-open-port .port-num { font-weight: 600; }
+  .investigate-open-port .port-svc { color: var(--text-dim); font-size: 10px; }
+
+  /* nmap recon profile buttons */
+  .nmap-profile-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 9px 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s;
+    line-height: 1.4;
+  }
+  .nmap-profile-btn:hover { border-color: var(--line-bright); color: var(--text); }
+  .nmap-profile-btn.active { background: rgba(74,122,90,0.15); border-color: var(--signal-low); color: var(--text); }
+  .nmap-profile-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .nmap-profile-btn .label { font-size: 11px; font-weight: 600; color: var(--text); }
+  .nmap-profile-btn .desc { font-size: 9px; color: var(--text-faint); margin-top: 2px; }
+  .nmap-profile-btn .badge { font-size: 8px; color: var(--signal-med); text-transform: uppercase; letter-spacing: 0.05em; }
+  .nmap-profile-btn .badge.admin { color: var(--signal-high); }
+  
+  .nmap-version-tag {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 9px;
+    border: 1px solid var(--line);
+    color: var(--text-faint);
+    margin-left: 6px;
+  }
+  .nmap-script-output {
+    font-size: 10px;
+    color: var(--text-dim);
+    background: rgba(0,0,0,0.2);
+    padding: 6px 10px;
+    margin-top: 3px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 80px;
+    overflow-y: auto;
+  }
+  .nmap-hop {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    margin: 1px;
+    border: 1px solid var(--line);
+    font-size: 9px;
+    color: var(--text-dim);
+  }
+  .nmap-hop .ttl { color: var(--text-faint); }
+  .nmap-hop .ip { color: var(--signal-low); }
+
+  .investigate-loading {
+    color: var(--text-faint);
+    font-size: 11px;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .investigate-whois-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 14px;
+    font-size: 12px;
+  }
+  .investigate-whois-grid .label { color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .investigate-whois-grid .value { color: var(--text); }
+  .investigate-whois-grid .value.null { color: var(--text-faint); font-style: italic; }
+
+  .flag { font-size: 14px; line-height: 1; margin-right: 2px; display: inline-block; vertical-align: middle; }
+
+  /* ---------- toast ---------- */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 8px 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+    z-index: 3000;
+    opacity: 0;
+    transform: translateY(12px);
+    pointer-events: none;
+    transition: all 0.25s ease;
+    font-family: var(--mono);
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  .dir-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    border: 1px solid var(--line);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .dir-badge.outbound { color: var(--signal-low); border-color: var(--signal-low); }
+  .dir-badge.inbound { color: var(--signal-med); border-color: var(--signal-med); }
+  .dir-badge.unknown { color: var(--text-faint); border-color: var(--text-faint); }
+
+  .stat-new {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--signal-low);
+    margin-left: 6px;
+    font-weight: 400;
+    vertical-align: middle;
+    animation: fadeInNew 0.3s ease;
+  }
+  @keyframes fadeInNew { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .geo { color: var(--text-dim); font-size: 11px; }
+  .reason { color: var(--text-dim); font-size: 11px; max-width: 280px; }
+  .timestamp { color: var(--text-faint); font-size: 11px; white-space: nowrap; }
+
+  .empty-state {
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--text-faint);
+  }
+
+  /* ---------- process breakdown ---------- */
+  .proc-grid {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto auto auto;
+    gap: 0;
+  }
+  .proc-res { color: var(--text-faint); font-size: 10px; text-align: right; font-variant-numeric: tabular-nums; }
+  .proc-row {
+    display: contents;
+  }
+  .proc-row > div {
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .proc-row:hover > div { background: rgba(255,255,255,0.015); }
+  .proc-bar-cell { display: flex; align-items: center; gap: 10px; }
+  .proc-bar-track {
+    flex: 1;
+    height: 3px;
+    background: var(--line);
+    position: relative;
+    min-width: 60px;
+  }
+  .proc-bar-fill {
+    height: 100%;
+    background: var(--signal-low);
+  }
+  .proc-count { color: var(--text-dim); text-align: right; }
+  .proc-flag { color: var(--signal-high); text-align: right; font-size: 11px; }
+  .proc-kill {
+    text-align: right;
+  }
+  .kill-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.15s;
+  }
+  .proc-row:hover .kill-btn { opacity: 1; }
+  .kill-btn:hover { color: var(--signal-high); border-color: var(--signal-high); }
+  .kill-btn.killed { opacity: 1; color: var(--text-faint); border-color: var(--text-faint); pointer-events: none; }
+
+  footer {
+    color: var(--text-faint);
+    font-size: 10px;
+    text-align: center;
+    margin-top: 30px;
+    letter-spacing: 0.03em;
+  }
+
+  /* ---------- map modal ---------- */
+  .map-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    backdrop-filter: blur(4px);
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    animation: fadeIn 0.2s ease;
+  }
+  .map-overlay.open { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .map-modal {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    max-width: 700px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  .map-modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .map-modal-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text); }
+  .map-modal-close {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px 10px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .map-modal-close:hover { color: var(--text); border-color: var(--line-bright); }
+
+  .map-modal-body { padding: 18px; overflow: hidden; }
+  #map-container {
+    height: 340px;
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--void);
+  }
+  #map-container .leaflet-control-zoom a {
+    background: var(--panel);
+    color: var(--text);
+    border-color: var(--line);
+  }
+  #map-container .leaflet-control-zoom a:hover { background: var(--line); }
+  #map-container .leaflet-control-attribution { display: none; }
+
+  .map-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 0;
+    padding: 14px 0 4px;
+    font-size: 12px;
+  }
+  .map-info-label { color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; }
+  .map-info-value { color: var(--text); }
+  .map-info-value.coords { color: var(--signal-low); font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 800px) {
+    .stat-strip { grid-template-columns: repeat(3, 1fr); }
+    .stat:nth-child(3) { border-right: none; }
+    .proc-exe, .geo, .reason { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="brand-mark"><span class="pulse-dot"></span><span class="l">L</span><span class="i">i</span><span class="li">li</span><span class="th">th</span></div>
+      <div class="brand-sub">passive traffic review · this machine only</div>
+    </div>
+    <div class="header-row">
+      <div style="display:flex;gap:6px">
+        <button class="filter-btn" id="wl-manage-btn" style="font-size:9px;color:var(--text-faint)">⊞ whitelist</button>
+        <button class="filter-btn" id="cleanup-btn" style="font-size:9px;color:var(--text-faint)">🧹 cleanup</button>
+        <button class="filter-btn" id="nmap-recon-btn" style="font-size:9px;color:var(--signal-low);border-color:var(--signal-low)">🛡️ nmap recon</button>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div class="clock" id="live-badge" style="color:var(--signal-low);font-size:10px">⬤ live</div>
+        <button class="filter-btn" id="notif-toggle" title="Toggle desktop notifications" style="font-size:9px">🔔</button>
+        <div class="clock" id="last-updated" style="color:var(--text-faint);font-size:10px">—</div>
+        <div class="clock" id="clock">--:--:--</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ---------- time range selector ---------- -->
+  <div class="tr-strip">
+    <span class="tr-label">view</span>
+    <button class="tr-btn live active" data-tr="live">⚡ LIVE</button>
+    <span class="tr-divider"></span>
+    <button class="tr-btn" data-tr="1h">1h</button>
+    <button class="tr-btn" data-tr="24h">24h</button>
+    <button class="tr-btn" data-tr="48h">48h</button>
+    <button class="tr-btn" data-tr="7d">7d</button>
+    <button class="tr-btn" data-tr="30d">30d</button>
+    <button class="tr-btn" data-tr="all">all</button>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat">
+      <div class="stat-label">Connections logged</div>
+      <div class="stat-value" id="stat-total">— <span class="stat-new" id="stat-new"></span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Unique remote IPs</div>
+      <div class="stat-value" id="stat-ips">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Processes seen</div>
+      <div class="stat-value" id="stat-procs">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Flagged — high</div>
+      <div class="stat-value hi" id="stat-high">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Flagged — medium</div>
+      <div class="stat-value med" id="stat-medium">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Awaiting analysis</div>
+      <div class="stat-value" id="stat-pending">—</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Connection log</div>
+      <div class="filters">
+        <input class="search-input" id="search-input" type="text" placeholder="🔍 search ip / process / country…" spellcheck="false">
+        <button class="filter-btn active" data-filter="">all</button>
+        <button class="filter-btn" data-filter="high">high</button>
+        <button class="filter-btn" data-filter="medium">medium</button>
+        <button class="filter-btn" data-filter="low">low</button>
+        <button class="filter-btn map-btn" id="global-map-btn">🌐 global map</button>
+        <button class="export-btn" id="export-csv-btn">⬇ csv</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;padding:6px 16px;border-bottom:1px solid var(--line);background:var(--panel)">
+      <span style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.05em;margin-right:4px">stage</span>
+      <button class="filter-btn active" data-stage-filter="">all</button>
+      <button class="filter-btn" data-stage-filter="heuristic">heuristic</button>
+      <button class="filter-btn" data-stage-filter="blocklist">blocklist</button>
+      <button class="filter-btn" data-stage-filter="reputation">reputation</button>
+      <button class="filter-btn" data-stage-filter="behavior">behavior</button>
+      <button class="filter-btn" data-stage-filter="dns">dns</button>
+      <button class="filter-btn" data-stage-filter="longlived">long-lived</button>
+      <button class="filter-btn" data-stage-filter="whitelist">wl</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:22%">Process</th>
+          <th style="width:16%">Remote</th>
+          <th style="width:16%">Location / org</th>
+          <th style="width:11%">Verdict</th>
+          <th style="width:21%">Reason</th>
+          <th style="width:14%">Last seen</th>
+        </tr>
+      </thead>
+      <tbody id="conn-body">
+        <tr><td colspan="6" class="empty-state">waiting for first poll cycle…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">By process — outbound volume</div>
+      <div class="panel-meta" id="proc-meta"></div>
+    </div>
+    <div class="proc-grid" id="proc-grid">
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Connection timeline</div>
+      <div class="filters">
+        <button class="filter-btn" data-tl="1h">1h</button>
+        <button class="filter-btn" data-tl="24h">24h</button>
+        <button class="filter-btn active" data-tl="3d">3d</button>
+        <button class="filter-btn" data-tl="7d">7d</button>
+        <button class="filter-btn" data-tl="30d">30d</button>
+      </div>
+    </div>
+    <div style="padding:16px;height:200px">
+      <canvas id="timeline-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- ---------- map modal ---------- -->
+  <div class="map-overlay" id="map-overlay">
+    <div class="map-modal">
+      <div class="map-modal-head">
+        <div class="map-modal-title" id="map-modal-title">📍 location</div>
+        <button class="map-modal-close" id="map-close">✕</button>
+      </div>
+      <div class="map-modal-body">
+        <div id="map-container"></div>
+        <div class="map-info" id="map-info">
+          <div><div class="map-info-label">IP</div><div class="map-info-value" id="map-ip">—</div></div>
+          <div><div class="map-info-label">Coordinates</div><div class="map-info-value coords" id="map-coords">—</div></div>
+          <div><div class="map-info-label">City / Country</div><div class="map-info-value" id="map-location">—</div></div>
+          <div><div class="map-info-label">Organization</div><div class="map-info-value" id="map-org">—</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- cleanup modal ---------- -->
+  <div class="map-overlay" id="cleanup-overlay">
+    <div class="map-modal" style="max-width:500px">
+      <div class="map-modal-head">
+        <div class="map-modal-title">🧹 database cleanup</div>
+        <button class="map-modal-close" id="cleanup-close">✕</button>
+      </div>
+      <div class="map-modal-body">
+        <div id="cleanup-stats" style="font-size:12px">loading…</div>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line)">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span style="font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.05em">retention</span>
+            <select id="cleanup-retention" style="background:var(--void);color:var(--text);border:1px solid var(--line);font-family:var(--mono);font-size:11px;padding:4px 8px">
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30" selected>30 days</option>
+              <option value="60">60 days</option>
+              <option value="90">90 days</option>
+              <option value="180">180 days</option>
+              <option value="365">365 days</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span style="font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.05em">auto-purge</span>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text-dim)">
+              <input type="checkbox" id="cleanup-enabled" checked style="accent-color:var(--signal-low)">
+              enabled (runs every 24h)
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="filter-btn" id="cleanup-save" style="color:var(--signal-low);border-color:var(--signal-low)">save settings</button>
+            <button class="filter-btn" id="cleanup-purge-now" style="color:var(--signal-high);border-color:var(--signal-high)">⚠ purge old</button>
+            <span style="width:1px;height:24px;background:var(--line);margin:0 4px"></span>
+            <button class="filter-btn" id="cleanup-purge-all" style="color:var(--signal-high);border-color:var(--signal-high);border-style:dashed">⚠ clear ALL</button>
+            <button class="filter-btn" id="cleanup-reset" style="color:var(--signal-high);border-color:var(--signal-high)">🔄 fresh start</button>
+            <span style="width:1px;height:24px;background:var(--line);margin:0 4px"></span>
+            <button class="filter-btn" id="cleanup-vacuum" style="color:var(--text-faint);border-color:var(--line)">🗜️ vacuum</button>
+          </div>
+          <div id="cleanup-msg" style="margin-top:10px;font-size:11px;color:var(--text-dim)"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- investigate modal ---------- -->
+  <div class="map-overlay" id="investigate-overlay">
+    <div class="map-modal" style="max-width:560px">
+      <div class="map-modal-head">
+        <div class="map-modal-title" id="investigate-title">🔍 investigate</div>
+        <button class="map-modal-close" id="investigate-close">✕</button>
+      </div>
+      <div class="map-modal-body" id="investigate-body" style="max-height:65vh;overflow-y:auto">
+        <div style="text-align:center;padding:20px;color:var(--text-faint)">select an IP to investigate</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- nmap recon modal ---------- -->
+  <div class="map-overlay" id="nmap-recon-overlay">
+    <div class="map-modal" style="max-width:680px">
+      <div class="map-modal-head">
+        <div class="map-modal-title">🛡️ nmap reconnaissance</div>
+        <button class="map-modal-close" id="nmap-recon-close">✕</button>
+      </div>
+      <div class="map-modal-body" id="nmap-recon-body" style="max-height:75vh;overflow-y:auto">
+        <!-- Target IP input -->
+        <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-faint);margin-bottom:6px">target</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="nmap-target-ip" type="text" value="" placeholder="enter IP address…" spellcheck="false"
+              style="flex:1;background:var(--void);border:1px solid var(--line);color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;outline:none">
+            <button class="filter-btn" id="nmap-from-clipboard" style="font-size:10px;color:var(--text-faint)">📋 paste</button>
+          </div>
+        </div>
+
+        <!-- Scan profiles grid -->
+        <div id="nmap-profiles-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Results area -->
+        <div id="nmap-recon-results" style="margin-top:6px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- whitelist modal ---------- -->
+  <div class="map-overlay" id="wl-overlay">
+    <div class="map-modal" style="max-width:500px">
+      <div class="map-modal-head">
+        <div class="map-modal-title">⊞ whitelist</div>
+        <button class="map-modal-close" id="wl-close">✕</button>
+      </div>
+      <div class="map-modal-body">
+        <div style="margin-bottom:12px;font-size:11px;color:var(--text-dim)">Whitelisted IPs and processes are excluded from flagged counts.</div>
+        <div id="wl-list" style="font-size:12px">loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <footer>
+    Lilith · capture via psutil + ETW · geo via ip-api.com · triage via heuristics + blocklist + reputation + behavior + dns + long-lived
+  </footer>
+
+</div>
+
+<script>
+const state = {
+  filter: "", stageFilter: "", search: "", timeRange: "live", mapInstance: null, searchTimer: null,
+  knownConnIds: new Set(), pollTimer: null, ws: null, wsReconnectTimer: null,
+  wsConnected: false, pollFallback: false, historyPollTimer: null,
+  prevTotal: null, newCount: 0
+};
+
+// ---------- helpers ----------
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const now = new Date();
+  const diffSec = Math.floor((now - d) / 1000);
+  if (diffSec < 60) return `${diffSec}s ago`;
+  if (diffSec < 3600) return `${Math.floor(diffSec/60)}m ago`;
+  return d.toLocaleTimeString();
+}
+
+function sevBadge(sev) {
+    if (!sev) return `<span class="sev-badge clean">clean</span>`;
+    return `<span class="sev-badge ${sev}">${sev}</span>`;
+  }
+
+  function stageBadge(stage, rule) {
+    if (!stage) return '';
+    const labels = { whitelist: 'wl', longlived: 'long-lived' };
+    const label = labels[stage] || stage;
+    const hint = rule ? ` title="rule: ${escapeHtml(rule)}"` : '';
+    return `<span class="stage-badge ${stage}"${hint}>${label}</span>`;
+  }
+
+function countryCodeToFlag(code) {
+  if (!code || code.length !== 2) return '';
+  const offset = 0x1F1E6 - 65;
+  return String.fromCodePoint(code.charCodeAt(0) + offset, code.charCodeAt(1) + offset);
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// ---------- toast ----------
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._hide);
+  el._hide = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ---------- desktop notifications ----------
+const notifOn = localStorage.getItem('lilith_notif') !== 'off';
+if (!notifOn) document.getElementById('notif-toggle').innerText = '🔕';
+
+document.getElementById('notif-toggle').addEventListener('click', () => {
+  const on = localStorage.getItem('lilith_notif') !== 'off';
+  if (on) {
+    localStorage.setItem('lilith_notif', 'off');
+    document.getElementById('notif-toggle').innerText = '🔕';
+    showToast('Notifications off');
+  } else {
+    Notification.requestPermission().then(p => {
+      if (p === 'granted') {
+        localStorage.setItem('lilith_notif', 'on');
+        document.getElementById('notif-toggle').innerText = '🔔';
+        showToast('Notifications on');
+      }
+    });
+  }
+});
+
+function sendNotif(title, body) {
+  if (localStorage.getItem('lilith_notif') === 'off') return;
+  if (!('Notification' in window) || Notification.permission === 'denied') return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '🔍' });
+  } else if (Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+// ---------- whitelist ----------
+function whitelistEntry(type, value, btn) {
+  fetch(`/api/whitelist?entry_type=${encodeURIComponent(type)}&entry_value=${encodeURIComponent(value)}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok') {
+        btn.textContent = '✓';
+        btn.classList.add('copied');
+        showToast(`Whitelisted ${value}`);
+      } else {
+        showToast(d.message || 'Already whitelisted');
+      }
+    });
+}
+
+function loadWhitelist() {
+  const list = document.getElementById('wl-list');
+  fetch('/api/whitelist').then(r => r.json()).then(rows => {
+    if (rows.length === 0) { list.innerHTML = '<div style="color:var(--text-faint)">No whitelist entries yet. Click ⊞ on an IP or process to add.</div>'; return; }
+    list.innerHTML = rows.map(r =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)">
+        <span><span style="color:var(--text-faint);text-transform:uppercase;font-size:10px">${r.entry_type}</span> ${r.entry_value}</span>
+        <button class="kill-btn" onclick="removeWhitelist(${r.id},this)" style="opacity:1">✕</button>
+      </div>`
+    ).join('');
+  }).catch(() => { list.innerHTML = '<div style="color:var(--signal-high)">Failed to load</div>'; });
+}
+
+function removeWhitelist(id, btn) {
+  fetch(`/api/whitelist/${id}`, { method: 'DELETE' }).then(() => {
+    btn.closest('div').remove();
+    showToast('Removed from whitelist');
+  });
+}
+
+// ---------- cleanup ----------
+function loadCleanupStats() {
+  const el = document.getElementById('cleanup-stats');
+  fetch('/api/cleanup').then(r => r.json()).then(d => {
+    const row = (label, val) =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)">
+        <span style="color:var(--text-faint);font-size:11px">${label}</span>
+        <span style="color:var(--text)">${val}</span>
+      </div>`;
+    el.innerHTML =
+      row('Total records', d.total_connections.toLocaleString()) +
+      row('Database size', d.db_size_mb + ' MB') +
+      row('Oldest record', d.oldest_record ? new Date(d.oldest_record).toLocaleString() : '—') +
+      row('Retention', d.retention_days + ' days') +
+      row('Purge runs', d.purge_count) +
+      row('Total purged', d.total_deleted.toLocaleString()) +
+      (d.last_purge ? row('Last purge', new Date(d.last_purge).toLocaleString()) : '');
+    document.getElementById('cleanup-retention').value = String(d.retention_days);
+    document.getElementById('cleanup-enabled').checked = d.enabled;
+  }).catch(() => { el.innerHTML = '<div style="color:var(--signal-high)">Failed to load stats</div>'; });
+}
+
+document.getElementById('cleanup-btn').addEventListener('click', () => {
+  document.getElementById('cleanup-overlay').classList.add('open');
+  loadCleanupStats();
+});
+document.getElementById('cleanup-close').addEventListener('click', () => {
+  document.getElementById('cleanup-overlay').classList.remove('open');
+});
+document.getElementById('cleanup-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) document.getElementById('cleanup-overlay').classList.remove('open');
+});
+
+document.getElementById('cleanup-save').addEventListener('click', () => {
+  const days = parseInt(document.getElementById('cleanup-retention').value);
+  const enabled = document.getElementById('cleanup-enabled').checked;
+  const msg = document.getElementById('cleanup-msg');
+  const params = new URLSearchParams();
+  params.set('retention_days', String(days));
+  params.set('enabled', String(enabled));
+  fetch('/api/cleanup/config?' + params.toString(), { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      msg.textContent = 'Settings saved — retention ' + d.retention_days + ' days';
+      msg.style.color = 'var(--signal-low)';
+      loadCleanupStats();
+    })
+    .catch(() => {
+      msg.textContent = 'Failed to save settings';
+      msg.style.color = 'var(--signal-high)';
+    });
+});
+
+document.getElementById('cleanup-purge-now').addEventListener('click', () => {
+  if (!confirm('Delete all connections older than the configured retention period? This cannot be undone.')) return;
+  const days = parseInt(document.getElementById('cleanup-retention').value);
+  const msg = document.getElementById('cleanup-msg');
+  const btn = document.getElementById('cleanup-purge-now');
+  btn.textContent = '⏳ purging…';
+  btn.disabled = true;
+  const params = new URLSearchParams();
+  params.set('retention_days', String(days));
+  fetch('/api/cleanup/purge-now?' + params.toString(), { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok') {
+        if (d.deleted > 0) {
+          msg.textContent = `Purged ${d.deleted} connection(s)`;
+        } else {
+          msg.textContent = 'No data older than ' + (days || document.getElementById('cleanup-retention').value) + ' days to purge';
+        }
+        msg.style.color = 'var(--signal-low)';
+      } else {
+        msg.textContent = d.message;
+        msg.style.color = 'var(--signal-high)';
+      }
+      loadCleanupStats();
+    })
+    .catch(() => { msg.textContent = 'Purge request failed'; msg.style.color = 'var(--signal-high)'; })
+    .finally(() => { btn.textContent = '⚠ purge now'; btn.disabled = false; });
+});
+
+// ---------- Purge All / Fresh Start / Vacuum ----------
+document.getElementById('cleanup-purge-all').addEventListener('click', () => {
+  if (!confirm('⚠️ Delete ALL connections and whitelist entries? This CANNOT be undone.')) return;
+  if (!confirm('⚠️ Are you SURE? All data will be permanently lost.')) return;
+  const msg = document.getElementById('cleanup-msg');
+  const btn = document.getElementById('cleanup-purge-all');
+  btn.textContent = '⏳ clearing…';
+  btn.disabled = true;
+  fetch('/api/cleanup/purge-all', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      msg.textContent = d.status === 'ok' ? `✅ ${d.message}` : `❌ ${d.message}`;
+      msg.style.color = d.status === 'ok' ? 'var(--signal-low)' : 'var(--signal-high)';
+      loadCleanupStats();
+    })
+    .catch(() => { msg.textContent = 'Request failed'; msg.style.color = 'var(--signal-high)'; })
+    .finally(() => { btn.textContent = '⚠ clear ALL'; btn.disabled = false; });
+});
+
+document.getElementById('cleanup-reset').addEventListener('click', () => {
+  if (!confirm('🔄 Fresh start: Delete ALL data and VACUUM database? This CANNOT be undone.')) return;
+  if (!confirm('⚠️ Are you SURE? This will wipe everything and reclaim disk space.')) return;
+  const msg = document.getElementById('cleanup-msg');
+  const btn = document.getElementById('cleanup-reset');
+  btn.textContent = '⏳ resetting…';
+  btn.disabled = true;
+  fetch('/api/cleanup/reset', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      msg.textContent = d.status === 'ok' ? `✅ ${d.message}` : `❌ ${d.message}`;
+      msg.style.color = d.status === 'ok' ? 'var(--signal-low)' : 'var(--signal-high)';
+      loadCleanupStats();
+    })
+    .catch(() => { msg.textContent = 'Request failed'; msg.style.color = 'var(--signal-high)'; })
+    .finally(() => { btn.textContent = '🔄 fresh start'; btn.disabled = false; });
+});
+
+document.getElementById('cleanup-vacuum').addEventListener('click', () => {
+  const msg = document.getElementById('cleanup-msg');
+  const btn = document.getElementById('cleanup-vacuum');
+  btn.textContent = '⏳ vacuuming…';
+  btn.disabled = true;
+  fetch('/api/cleanup/vacuum', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok') {
+        const savedKB = (d.saved_bytes / 1024).toFixed(1);
+        msg.textContent = `✅ Vacuumed: ${savedKB} KB reclaimed`;
+      } else {
+        msg.textContent = `❌ ${d.message}`;
+      }
+      msg.style.color = d.status === 'ok' ? 'var(--signal-low)' : 'var(--signal-high)';
+      loadCleanupStats();
+    })
+    .catch(() => { msg.textContent = 'Vacuum failed'; msg.style.color = 'var(--signal-high)'; })
+    .finally(() => { btn.textContent = '🗜️ vacuum'; btn.disabled = false; });
+});
+
+document.getElementById('wl-manage-btn').addEventListener('click', () => {
+  document.getElementById('wl-overlay').classList.add('open');
+  loadWhitelist();
+});
+document.getElementById('wl-close').addEventListener('click', () => {
+  document.getElementById('wl-overlay').classList.remove('open');
+});
+document.getElementById('wl-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) document.getElementById('wl-overlay').classList.remove('open');
+});
+
+// ---------- timeline chart ----------
+let timelineChart = null;
+let tlRange = '24h';
+
+document.querySelectorAll('[data-tl]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-tl]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    tlRange = btn.dataset.tl;
+    refreshTimeline();
+  });
+});
+
+async function refreshTimeline() {
+  try {
+    const range = tlRange;
+    const res = await fetch(`/api/timeline?time_range=${range}`);
+    const data = await res.json();
+    const labels = data.map(r => r.bucket);
+    const counts = data.map(r => r.count);
+
+    if (timelineChart) { timelineChart.destroy(); }
+
+    const ctx = document.getElementById('timeline-chart').getContext('2d');
+    timelineChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'connections',
+          data: counts,
+          borderColor: '#4a7a5a',
+          backgroundColor: 'rgba(74,122,90,0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 1.5
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            display: true,
+            ticks: { color: '#445040', font: { size: 10, family: 'IBM Plex Mono, monospace' }, maxTicksLimit: 8 },
+            grid: { color: '#1e2a1c' }
+          },
+          y: {
+            display: true,
+            ticks: { color: '#445040', font: { size: 10, family: 'IBM Plex Mono, monospace' }, maxTicksLimit: 5 },
+            grid: { color: '#1e2a1c' }
+          }
+        }
+      }
+    });
+  } catch (e) {}
+}
+
+// ---------- copy to clipboard ----------
+function copyIp(ev, ip) {
+  navigator.clipboard.writeText(ip).then(() => {
+    const btn = ev.target;
+    btn.classList.add('copied');
+    btn.textContent = '✓';
+    showToast(`Copied ${ip}`);
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.textContent = '⎘';
+    }, 1200);
+  }).catch(() => showToast('Failed to copy'));
+}
+
+// ---------- kill process ----------
+function killProcess(pid, name, btn) {
+  if (!confirm(`Kill ${name} (PID ${pid})?`)) return;
+  fetch(`/api/kill-process/${pid}`, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(d => {
+      btn.classList.add('killed');
+      btn.textContent = '✕';
+      showToast(d.status === 'ok' ? `Killed ${name} (${pid})` : `Failed: ${d.message}`);
+    })
+    .catch(() => showToast('Kill request failed'));
+}
+
+// ---------- DOM updaters ----------
+function _updateStats(d) {
+  const totalEl = document.getElementById('stat-total');
+  const newEl = document.getElementById('stat-new');
+
+  if (state.prevTotal != null) {
+    const delta = d.total_connections - state.prevTotal;
+    if (delta > 0) {
+      state.newCount += delta;
+      if (newEl) {
+        newEl.textContent = `+${state.newCount}`;
+        newEl.style.animation = 'none';
+        requestAnimationFrame(() => { newEl.style.animation = ''; });
+      }
+    }
+  }
+  state.prevTotal = d.total_connections;
+
+  totalEl.innerText = d.total_connections;
+  document.getElementById('stat-ips').innerText = d.unique_remote_ips;
+  document.getElementById('stat-procs').innerText = d.unique_processes;
+  document.getElementById('stat-high').innerText = d.severity_counts.high || 0;
+  document.getElementById('stat-medium').innerText = d.severity_counts.medium || 0;
+  document.getElementById('stat-pending').innerText = d.pending_analysis + d.pending_geo;
+}
+
+function resetNewCounter() {
+  state.newCount = 0;
+  const el = document.getElementById('stat-new');
+  if (el) el.textContent = '';
+}
+
+function dirBadge(dir) {
+  const d = (dir || 'unknown').toLowerCase();
+  const sym = d === 'outbound' ? '↗' : d === 'inbound' ? '↙' : '?';
+  return `<span class="dir-badge ${d}" title="${d}">${sym}</span>`;
+}
+
+function _updateConnections(rows) {
+  const body = document.getElementById('conn-body');
+  if (rows.length === 0) {
+    body.innerHTML = `<tr><td colspan="6" class="empty-state">no connections match this filter yet</td></tr>`;
+    return;
+  }
+
+  // Check for new high-severity connections to send notification
+  rows.forEach(r => {
+    if (state.knownConnIds.size > 0 && !state.knownConnIds.has(r.id) && r.severity === 'high') {
+      sendNotif('Lilith: High severity', `${r.proc_name || 'unknown'} → ${r.remote_ip}:${r.remote_port} — ${r.reason || ''}`);
+    }
+  });
+
+  body.innerHTML = rows.map(r => {
+    const isNew = state.knownConnIds.size > 0 && !state.knownConnIds.has(r.id);
+    state.knownConnIds.add(r.id);
+    const rowClass = [r.severity === 'high' ? 'sev-high' : '', isNew ? 'row-new' : ''].filter(Boolean).join(' ');
+    const flagHtml = r.geo_country_code ? countryCodeToFlag(r.geo_country_code) : '';
+    const locationParts = [r.geo_city, r.geo_country].filter(Boolean);
+    const geo = locationParts.length ? `${flagHtml} ${locationParts.join(', ')}` : '';
+    const orgParts = [];
+    if (r.remote_asn) orgParts.push(escapeHtml(r.remote_asn));
+    if (r.geo_org) orgParts.push(escapeHtml(r.geo_org));
+    const org = orgParts.length ? `<div class="geo">${orgParts.join(' · ')}</div>` : '';
+    const safeIp = escapeHtml(r.remote_ip).replace(/'/g, "\\'");
+    const dir = dirBadge(r.direction);
+    return `
+      <tr class="${rowClass}">
+        <td>
+          <span class="proc-name">${escapeHtml(r.proc_name || 'unknown')}</span>
+          <button class="copy-btn wl-btn" onclick="whitelistEntry('proc', '${escapeHtml(r.proc_name || 'unknown').replace(/'/g, "\\'")}', this)" title="Whitelist this process">⊞</button>
+          ${r.proc_memory_mb != null ? `<span class="res-badge">🧠<span class="num${r.proc_memory_mb > 200 ? ' hot' : ''}">${r.proc_memory_mb.toFixed(0)}</span> ⚡<span class="num${r.proc_cpu_pct > 50 ? ' hot' : ''}">${(r.proc_cpu_pct || 0).toFixed(1)}</span></span>` : ''}
+          ${r.proc_exe ? `<span class="proc-exe">${escapeHtml(r.proc_exe)}</span>` : ''}
+        </td>
+        <td>
+          <div class="ip-cell">
+            ${dir}
+            <span class="ip" onclick="openMap('${safeIp}')">${escapeHtml(r.remote_ip)}</span>
+            <button class="copy-btn" onclick="copyIp(event, '${safeIp}')" title="Copy IP">⎘</button>
+            <button class="copy-btn wl-btn" onclick="whitelistEntry('ip', '${safeIp}', this)" title="Whitelist this IP">⊞</button>
+            <button class="inv-btn" onclick="openInvestigate('${safeIp}')" title="Investigate this IP">🔍</button>
+            <button class="inv-btn" onclick="openNmapRecon('${safeIp}')" title="Nmap recon this IP" style="color:var(--signal-low);border-color:var(--signal-low)">🛡️</button>
+          </div>
+          <div class="geo">:${r.remote_port}</div>
+          ${r.remote_hostname ? `<div class="geo host">${escapeHtml(r.remote_hostname)}</div>` : ''}
+        </td>
+        <td>${geo ? `<div class="geo">${geo}</div>` : '<div class="geo">—</div>'}${org}</td>
+        <td>${sevBadge(r.severity)}${stageBadge(r.pipeline_stage, r.pipeline_rule)}</td>
+        <td class="reason">${escapeHtml(r.reason || (r.geo_lookup_done ? 'no suspicious signals' : 'resolving location…'))}</td>
+        <td class="timestamp">${fmtTime(r.last_seen)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  if (state.knownConnIds.size > 5000) {
+    const arr = [...state.knownConnIds];
+    state.knownConnIds = new Set(arr.slice(arr.length - 2000));
+  }
+}
+
+function _updateProcesses(rows) {
+  const grid = document.getElementById('proc-grid');
+  const maxCount = Math.max(...rows.map(r => r.conn_count), 1);
+  document.getElementById('proc-meta').innerText = `top ${rows.length} by connection count`;
+  if (rows.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">no data yet</div>`;
+    return;
+  }
+  grid.innerHTML = rows.map(r => {
+    const pct = Math.round((r.conn_count / maxCount) * 100);
+    const flagged = (r.high_count || 0) + (r.medium_count || 0);
+    const safeName = escapeHtml(r.proc_name || 'unknown').replace(/'/g, "\\'");
+    const killBtn = r.sample_pid != null
+      ? `<button class="kill-btn" onclick="killProcess(${r.sample_pid}, '${safeName}', this)">✕</button>`
+      : '';
+    const resCell = (r.peak_mem_mb != null || r.peak_cpu_pct != null)
+      ? `<span class="proc-res">🧠${r.peak_mem_mb || '—'} ⚡${r.peak_cpu_pct != null ? r.peak_cpu_pct + '%' : '—'}</span>`
+      : '';
+    return `
+      <div class="proc-row">
+        <div class="proc-bar-cell"><span class="proc-name">${escapeHtml(r.proc_name || 'unknown')}</span></div>
+        <div class="proc-bar-cell"><div class="proc-bar-track"><div class="proc-bar-fill" style="width:${pct}%;background:${flagged > 0 ? 'var(--signal-high)' : 'var(--signal-low)'}"></div></div></div>
+        <div class="proc-count">${r.conn_count} conn · ${r.unique_ips} ips</div>
+        <div class="proc-flag">${flagged > 0 ? flagged + ' flagged' : ''}</div>
+        <div class="proc-kill">${killBtn}</div>
+        <div class="proc-res">${resCell}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ---------- map modal ----------
+function _makeMap(container, center, zoom) {
+  if (state.mapInstance) { state.mapInstance.remove(); state.mapInstance = null; }
+  const map = L.map(container, { center, zoom, zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map);
+  state.mapInstance = map;
+  setTimeout(() => map.invalidateSize(), 150);
+  return map;
+}
+
+// ---------- investigate modal ----------
+function openInvestigate(ip) {
+  document.getElementById('investigate-overlay').classList.add('open');
+  document.getElementById('investigate-title').innerText = `🔍 investigate ${ip}`;
+  const body = document.getElementById('investigate-body');
+  body.innerHTML = `<div class="investigate-loading">⬤ resolving DNS, scanning ports, fetching WHOIS…</div>`;
+  fetch(`/api/investigate/${encodeURIComponent(ip)}`)
+    .then(r => r.json())
+    .then(d => {
+      let html = '';
+
+      // 1. Reverse DNS
+      html += `<div class="investigate-sect">
+        <div class="investigate-sect-title">↩ reverse DNS</div>
+        <div class="investigate-value ${d.reverse_dns ? '' : 'null'}">${d.reverse_dns ? escapeHtml(d.reverse_dns) : 'no PTR record'}</div>
+      </div>`;
+
+      // 2. Location / Geo (from WHOIS if available)
+      const w = d.whois || {};
+      if (w.org && !w.error) {
+        html += `<div class="investigate-sect">
+          <div class="investigate-sect-title">📌 location</div>
+          <div class="investigate-whois-grid">`;
+        const geoFields = [
+          { label: 'Country', val: w.country_code ? `${w.country} (${w.country_code})` : w.country },
+          { label: 'Region', val: w.region },
+          { label: 'City', val: w.city },
+          { label: 'Coordinates', val: w.latitude != null ? `${w.latitude.toFixed(4)}, ${w.longitude.toFixed(4)}` : null },
+          { label: 'Continent', val: w.continent },
+          { label: 'Postal', val: w.postal },
+          { label: 'Timezone', val: w.timezone_id },
+          { label: 'Calling Code', val: w.calling_code ? `+${w.calling_code}` : null },
+          { label: 'Capital', val: w.capital },
+          { label: 'Borders', val: w.borders },
+          { label: 'EU Member', val: w.is_eu != null ? String(w.is_eu) : null },
+          { label: 'IP Type', val: w.type },
+        ];
+        geoFields.forEach(f => {
+          if (f.val) {
+            html += `<div class="label">${f.label}</div><div class="value">${escapeHtml(f.val)}</div>`;
+          }
+        });
+        html += `</div>`;
+        // Timezone extra info
+        if (w.timezone_utc || w.timezone_current_time) {
+          html += `<div style="margin-top:8px;font-size:11px;color:var(--text-dim)">`;
+          if (w.timezone_utc) html += `UTC offset: ${escapeHtml(w.timezone_utc)}`;
+          if (w.timezone_utc && w.timezone_current_time) html += ` · `;
+          if (w.timezone_current_time) html += `local: ${escapeHtml(w.timezone_current_time)}`;
+          html += `</div>`;
+        }
+        html += `</div>`;
+
+        // 3. Connection / ASN
+        html += `<div class="investigate-sect">
+          <div class="investigate-sect-title">🔗 network / ASN</div>
+          <div class="investigate-whois-grid">`;
+        const netFields = [
+          { label: 'Organization', val: w.org },
+          { label: 'ASN', val: w.asn_str || w.asn },
+          { label: 'ISP', val: w.isp },
+          { label: 'Domain', val: w.domain },
+        ];
+        netFields.forEach(f => {
+          if (f.val) {
+            html += `<div class="label">${f.label}</div><div class="value">${escapeHtml(f.val)}</div>`;
+          }
+        });
+        html += `</div></div>`;
+      } else if (w.error) {
+        html += `<div class="investigate-sect">
+          <div class="investigate-sect-title">📋 WHOIS</div>
+          <div class="investigate-value error">⚠ ${escapeHtml(w.error)}</div>
+        </div>`;
+      }
+
+      // 4. Port scan
+      html += `<div class="investigate-sect">
+        <div class="investigate-sect-title">🔌 open ports (${d.open_ports.length})</div>`;
+      if (d.open_ports && d.open_ports.length > 0) {
+        const details = d.open_ports_detail || [];
+        html += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+        details.forEach(p => {
+          html += `<span class="investigate-open-port"><span class="port-num">${p.port}</span> <span class="port-svc">${p.service}</span></span>`;
+        });
+        html += '</div>';
+      } else {
+        html += `<div class="investigate-value null">no common ports open</div>`;
+      }
+      html += '</div>';
+
+      // 5. RDAP — authoritative registration data
+      const rdap = d.rdap || {};
+      if (rdap && !rdap.error) {
+        html += `<div class="investigate-sect">
+          <div class="investigate-sect-title">📜 RDAP — authoritative registration</div>
+          <div class="investigate-whois-grid">`;
+        const rdapFields = [
+          { label: 'RIR', val: rdap.rir },
+          { label: 'Network', val: rdap.net_name },
+          { label: 'Type', val: rdap.net_type },
+          { label: 'Handle', val: rdap.handle },
+          { label: 'Start', val: rdap.start_address },
+          { label: 'End', val: rdap.end_address },
+          { label: 'Org Handle', val: rdap.org_handle },
+          { label: 'Abuse Email', val: rdap.abuse_email },
+        ];
+        rdapFields.forEach(f => {
+          if (f.val) {
+            const extraClass = f.label === 'Abuse Email' ? ' style="color:var(--signal-high);text-decoration:underline"' : '';
+            html += `<div class="label">${f.label}</div><div class="value"${extraClass}>${escapeHtml(String(f.val))}</div>`;
+          }
+        });
+        html += `</div></div>`;
+      } else if (rdap.error) {
+        html += `<div class="investigate-sect">
+          <div class="investigate-sect-title">📜 RDAP — authoritative registration</div>
+          <div class="investigate-value null">${escapeHtml(rdap.error)}</div>
+        </div>`;
+      }
+
+      // 6. Nmap scan (deeper) — check if available, show as actionable button
+      html += `<div class="investigate-sect" id="nmap-section-${escapeHtml(ip)}">
+        <div class="investigate-sect-title">🛡️ nmap recon</div>
+        <div style="margin-bottom:8px;font-size:11px;color:var(--text-dim)">Open the full nmap reconnaissance panel for all scan profiles.</div>
+        <button class="filter-btn" id="nmap-btn-${escapeHtml(ip)}" onclick="openNmapRecon('${escapeHtml(ip)}')" style="color:var(--signal-low);border-color:var(--signal-low);font-size:11px">🛡️ full nmap recon</button>
+        <div id="nmap-results-${escapeHtml(ip)}" style="margin-top:10px"></div>
+      </div>`;
+
+      body.innerHTML = html;
+    })
+    .catch(err => {
+      body.innerHTML = `<div class="investigate-value error">⚠ investigation failed: ${escapeHtml(err.message || 'unknown error')}</div>`;
+    });
+}
+
+document.getElementById('investigate-close').addEventListener('click', () => {
+  document.getElementById('investigate-overlay').classList.remove('open');
+});
+document.getElementById('investigate-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) document.getElementById('investigate-overlay').classList.remove('open');
+});
+
+function openMap(ip) {
+  document.getElementById('map-overlay').classList.add('open');
+  document.getElementById('map-modal-title').innerText = `📍 ${ip}`;
+  document.getElementById('map-container').style.height = '340px';
+  document.getElementById('map-ip').innerText = ip;
+  document.getElementById('map-coords').innerText = 'looking up…';
+  document.getElementById('map-location').innerText = '—';
+  document.getElementById('map-org').innerText = '—';
+  fetch(`/api/geo-detail/${ip}`).then(r => r.json()).then(data => {
+    if (data.error) { document.getElementById('map-coords').innerText = 'not yet resolved'; return; }
+    const flag = countryCodeToFlag(data.geo_country_code);
+    document.getElementById('map-coords').innerText = data.geo_lat != null ? `${data.geo_lat.toFixed(4)}, ${data.geo_lon.toFixed(4)}` : '—';
+    document.getElementById('map-location').innerText = [data.geo_city, data.geo_country].filter(Boolean).join(', ') || '—';
+    document.getElementById('map-org').innerText = data.geo_org || '—';
+    if (data.geo_lat != null && data.geo_lon != null) {
+      const map = _makeMap('map-container', [data.geo_lat, data.geo_lon], 6);
+      L.marker([data.geo_lat, data.geo_lon]).addTo(map)
+        .bindPopup(`<b>${flag ? flag + ' ' : ''}${data.geo_city || '?'}</b><br>${data.geo_country || ''}`).openPopup();
+    }
+  }).catch(() => document.getElementById('map-coords').innerText = 'lookup failed');
+}
+
+function openGlobalMap() {
+  document.getElementById('map-overlay').classList.add('open');
+  document.getElementById('map-modal-title').innerText = '🌐 global — all resolved IPs';
+  document.getElementById('map-container').style.height = '480px';
+  document.getElementById('map-ip').innerText = '…loading';
+  document.getElementById('map-coords').innerText = '…';
+  document.getElementById('map-location').innerText = '—';
+  document.getElementById('map-org').innerText = '—';
+  fetch('/api/geo-all').then(r => r.json()).then(data => {
+    if (data.length === 0) { document.getElementById('map-coords').innerText = 'no geo data yet'; document.getElementById('map-ip').innerText = '—'; return; }
+    document.getElementById('map-coords').innerText = `${data.length} locations`;
+    document.getElementById('map-ip').innerText = '—';
+    const map = _makeMap('map-container', [20, 0], 2);
+    const pts = [];
+    data.forEach(r => {
+      const flag = countryCodeToFlag(r.geo_country_code);
+      const m = L.marker([r.geo_lat, r.geo_lon]).addTo(map);
+      m.bindPopup(`<b>${r.remote_ip}</b><br>${flag ? flag + ' ' : ''}${[r.geo_city, r.geo_country].filter(Boolean).join(', ') || '?'}<br>${r.geo_org || ''}<br><small>${r.conn_count} conn · ${r.flag_count > 0 ? r.flag_count + ' flagged' : 'no flags'}</small>`);
+      pts.push([r.geo_lat, r.geo_lon]);
+    });
+    if (pts.length > 1) map.fitBounds(pts, { padding: [30, 30] });
+  }).catch(() => { document.getElementById('map-coords').innerText = 'lookup failed'; document.getElementById('map-ip').innerText = '—'; });
+}
+
+function closeMap() {
+  document.getElementById('map-overlay').classList.remove('open');
+  if (state.mapInstance) { state.mapInstance.remove(); state.mapInstance = null; }
+}
+
+document.getElementById('map-close').addEventListener('click', closeMap);
+document.getElementById('map-overlay').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeMap(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMap(); });
+document.getElementById('global-map-btn').addEventListener('click', openGlobalMap);
+
+// ---------- WebSocket real-time ----------
+function connectWebSocket() {
+  if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) return;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  try {
+    state.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+  } catch (e) {
+    console.warn('[ws] failed, polling fallback');
+    _startPollFallback(); return;
+  }
+  state.ws.onopen = () => {
+    console.log('[ws] connected');
+    state.wsConnected = true; state.pollFallback = false;
+    document.getElementById('live-badge').style.color = 'var(--signal-low)';
+    document.getElementById('live-badge').innerText = '⬤ live';
+    if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+  };
+  state.ws.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      // In LIVE mode: use WS data directly
+      if (state.timeRange === 'live') {
+        _updateStats(data.stats);
+        if (!state.filter && !state.stageFilter && !state.search) _updateConnections(data.connections);
+        _updateProcesses(data.processes);
+      }
+      document.getElementById('last-updated').innerText = 'updated ' + new Date().toLocaleTimeString();
+    } catch (err) { console.error('[ws] parse', err); }
+  };
+  state.ws.onclose = () => {
+    console.log('[ws] disconnected');
+    state.wsConnected = false;
+    document.getElementById('live-badge').style.color = 'var(--signal-med)';
+    document.getElementById('live-badge').innerText = '⬤ recon';
+    state.ws = null;
+    _startPollFallback();
+    clearTimeout(state.wsReconnectTimer);
+    state.wsReconnectTimer = setTimeout(connectWebSocket, 5000);
+  };
+  state.ws.onerror = () => { state.wsConnected = false; state.ws = null; _startPollFallback(); };
+}
+
+function _startPollFallback() {
+  if (state.pollFallback) return;
+  state.pollFallback = true;
+  if (state.pollTimer) return;
+  if (state.historyPollTimer) return;  // history poll already covers refreshes
+  state.pollTimer = setInterval(() => {
+    if (state.wsConnected && state.timeRange === 'live' && !state.filter && !state.stageFilter && !state.search) {
+      // WS is handling everything, stop fallback
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+      return;
+    }
+    refreshAll();
+    document.getElementById('last-updated').innerText = 'poll ' + new Date().toLocaleTimeString();
+  }, 4000);
+}
+
+function _startHistoryPoll() {
+  if (state.historyPollTimer) return;
+  // Stop fallback poll if running — history poll covers it now
+  if (state.pollTimer) {
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+  state.historyPollTimer = setInterval(() => {
+    if (state.timeRange === 'live') {
+      clearInterval(state.historyPollTimer);
+      state.historyPollTimer = null;
+      return;
+    }
+    refreshAll();
+  }, 4000);
+}
+
+function _stopHistoryPoll() {
+  if (state.historyPollTimer) {
+    clearInterval(state.historyPollTimer);
+    state.historyPollTimer = null;
+  }
+}
+
+async function refreshStats() {
+  try {
+    const params = new URLSearchParams();
+    params.set('time_range', state.timeRange);
+    _updateStats(await (await fetch('/api/stats?' + params.toString())).json());
+  } catch (e) {}
+}
+
+async function refreshConnections() {
+  try {
+    const params = new URLSearchParams();
+    params.set('time_range', state.timeRange);
+    if (state.filter) params.set('severity', state.filter);
+    if (state.stageFilter) params.set('pipeline_stage', state.stageFilter);
+    if (state.search) params.set('search', state.search);
+    _updateConnections(await (await fetch('/api/connections?' + params.toString())).json());
+  } catch (e) {}
+}
+
+async function refreshProcesses() {
+  try {
+    const params = new URLSearchParams();
+    params.set('time_range', state.timeRange);
+    params.set('limit', '12');
+    _updateProcesses(await (await fetch('/api/processes?' + params.toString())).json());
+  } catch (e) {}
+}
+
+async function refreshAll() {
+  await Promise.all([refreshStats(), refreshConnections(), refreshProcesses()]);
+}
+
+// ---------- time range selector ----------
+document.querySelectorAll('[data-tr]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-tr]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.timeRange = btn.dataset.tr;
+    window.location.hash = state.timeRange;
+    resetNewCounter();
+
+    // Update live badge text
+    const badge = document.getElementById('live-badge');
+    if (state.timeRange === 'live') {
+      badge.style.color = 'var(--signal-low)';
+      badge.innerText = '⬤ live';
+      _stopHistoryPoll();
+    } else {
+      badge.style.color = 'var(--signal-med)';
+      badge.innerText = '⏷ ' + state.timeRange;
+      _startHistoryPoll();
+    }
+
+    refreshAll();
+    refreshTimeline();
+  });
+});
+
+// Restore time range from URL hash on load
+(function initTimeRange() {
+  const hash = window.location.hash.replace('#', '');
+  if (hash) {
+    const btn = document.querySelector(`[data-tr="${hash}"]`);
+    if (btn) btn.click();
+  }
+})();
+
+// ---------- search with debounce ----------
+document.getElementById('search-input').addEventListener('input', function () {
+  const val = this.value.trim();
+  this.classList.toggle('has-value', val.length > 0);
+  clearTimeout(state.searchTimer);
+  state.searchTimer = setTimeout(() => { state.search = val; resetNewCounter(); refreshConnections(); }, 300);
+});
+
+document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.filter = btn.dataset.filter;
+    resetNewCounter();
+    refreshConnections();
+  });
+});
+
+// ---------- stage filter ----------
+document.querySelectorAll('.filter-btn[data-stage-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn[data-stage-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.stageFilter = btn.dataset.stageFilter;
+    resetNewCounter();
+    refreshConnections();
+  });
+});
+
+document.getElementById('export-csv-btn').addEventListener('click', () => {
+  const params = new URLSearchParams();
+  params.set('time_range', state.timeRange);
+  if (state.filter) params.set('severity', state.filter);
+  if (state.stageFilter) params.set('pipeline_stage', state.stageFilter);
+  if (state.search) params.set('search', state.search);
+  window.open('/api/export/csv?' + params.toString(), '_blank');
+});
+
+function tickClock() {
+  document.getElementById('clock').innerText = new Date().toLocaleTimeString();
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+// Bootstrap
+connectWebSocket();
+refreshAll(); refreshTimeline();
+if (state.timeRange !== 'live') _startHistoryPoll();
+
+// Extra sync for filter/search over WS (every 10s) — only in live mode
+setInterval(() => {
+  if (state.wsConnected && state.timeRange === 'live') refreshConnections();
+}, 10000);
+// Refresh timeline every 30s
+setInterval(refreshTimeline, 30000);
+// Refresh stats/processes via HTTP every 10s even in live+WS mode for accuracy
+setInterval(() => {
+  if (state.wsConnected && state.timeRange === 'live') {
+    refreshStats();
+    refreshProcesses();
+  }
+}, 10000);
+</script>
+<script>
+// ---------- nmap recon modal ----------
+function openNmapRecon(ip) {
+  const overlay = document.getElementById('nmap-recon-overlay');
+  overlay.classList.add('open');
+  if (ip) {
+    document.getElementById('nmap-target-ip').value = ip;
+  }
+  loadNmapProfiles();
+}
+
+function loadNmapProfiles() {
+  const grid = document.getElementById('nmap-profiles-grid');
+  const results = document.getElementById('nmap-recon-results');
+  results.innerHTML = '';
+  grid.innerHTML = '<div style="grid-column:1/-1;color:var(--text-faint);font-size:11px">loading profiles...</div>';
+
+  fetch('/api/nmap-status')
+    .then(r => r.json())
+    .then(status => {
+      if (!status.available) {
+        grid.innerHTML = `<div style="grid-column:1/-1;color:var(--signal-high);font-size:11px">
+          ${status.message}</div>`;
+        return;
+      }
+      const adminBadge = status.admin ? '' : ' <span class="badge admin">⛔ needs admin</span>';
+      grid.innerHTML = Object.entries(status.profiles || {}).map(([key, p]) => {
+        if (!p.available) return '';
+        return `<button class="nmap-profile-btn" onclick="runNmapRecon('${key}')" id="nmap-btn-${key}">
+          <div class="label">${p.name}</div>
+          <div class="desc">${p.desc}</div>
+          ${p.admin_required ? '<div class="badge admin">requires admin</div>' : ''}
+        </button>`;
+      }).join('');
+    })
+    .catch(err => {
+      grid.innerHTML = `<div style="grid-column:1/-1;color:var(--signal-high)">Failed: ${escapeHtml(err.message)}</div>`;
+    });
+}
+
+function runNmapRecon(profile) {
+  const ip = document.getElementById('nmap-target-ip').value.trim();
+  if (!ip) {
+    showToast('Enter an IP address first');
+    return;
+  }
+  // Validate IP format
+  const ipParts = ip.split('.');
+  if (ipParts.length !== 4 || ipParts.some(p => isNaN(p) || p < 0 || p > 255)) {
+    showToast('Invalid IP address');
+    return;
+  }
+
+  const results = document.getElementById('nmap-recon-results');
+  const btn = document.getElementById(`nmap-btn-${profile}`);
+  if (btn) { btn.disabled = true; btn.classList.add('active'); }
+
+  results.innerHTML = `<div class="investigate-loading">⬤ running ${profile} scan...</div>`;
+
+  fetch(`/api/nmap-scan/${encodeURIComponent(ip)}?profile=${encodeURIComponent(profile)}`)
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.disabled = false; }
+      if (d.status === 'unavailable') {
+        results.innerHTML = `<div class="investigate-value error">${escapeHtml(d.message)}</div>`;
+        return;
+      }
+      if (d.status === 'timeout') {
+        results.innerHTML = `<div class="investigate-value error">${escapeHtml(d.message)}</div>`;
+        return;
+      }
+      if (d.status === 'error') {
+        results.innerHTML = `<div class="investigate-value error">${escapeHtml(d.message)}</div>`;
+        return;
+      }
+      renderNmapResults(d, results);
+    })
+    .catch(err => {
+      if (btn) { btn.disabled = false; }
+      results.innerHTML = `<div class="investigate-value error">${escapeHtml(err.message)}</div>`;
+    });
+}
+
+function renderNmapResults(d, container) {
+  let html = '';
+
+  // Scan metadata
+  html += `<div style="font-size:10px;color:var(--text-faint);margin-bottom:10px;display:flex;gap:10px;flex-wrap:wrap">
+    <span>profile: <span style="color:var(--signal-low)">${d.profile_name || d.profile}</span></span>
+    <span>host: <span style="color:var(--text)">${d.host_status || 'unknown'}</span></span>
+    <span>open ports: <span style="color:var(--signal-low)">${d.open_count || 0}</span></span>
+    ${d.filtered_count ? `<span>filtered: <span style="color:var(--signal-med)">${d.filtered_count}</span></span>` : ''}
+    <span class="nmap-version-tag">${d.nmap_version || 'nmap'}</span>
+  </div>`;
+
+  // Hostnames
+  if (d.hostnames && d.hostnames.length > 0) {
+    html += '<div style="margin-bottom:8px;font-size:11px;color:var(--text-dim)">';
+    d.hostnames.forEach(h => {
+      html += `<div>${h.type}: <span style="color:var(--signal-low)">${escapeHtml(h.name)}</span></div>`;
+    });
+    html += '</div>';
+  }
+
+  // OS detection
+  if (d.os_detection && d.os_detection.length > 0) {
+    html += '<div style="margin-bottom:8px;font-size:11px;color:var(--text-dim)">';
+    html += '<span style="text-transform:uppercase;letter-spacing:0.05em;color:var(--text-faint);font-size:10px">OS:</span> ';
+    html += d.os_detection.map(o => `<span style="color:var(--signal-med)">${escapeHtml(o.name)} (${o.accuracy}%)</span>`).join(', ');
+    html += '</div>';
+  }
+
+  // Ports
+  if (d.ports && d.ports.length > 0) {
+    html += '<div style="margin-bottom:8px">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+    // Show open ports first, then filtered
+    const openPorts = d.ports.filter(p => p.state === 'open');
+    const otherPorts = d.ports.filter(p => p.state !== 'open');
+    [...openPorts, ...otherPorts].forEach(p => {
+      const isOpen = p.state === 'open';
+      const borderColor = isOpen ? 'var(--signal-low)' : 'var(--signal-med)';
+      const verStr = p.version ? ` <span style="color:var(--text-faint);font-size:9px">${escapeHtml(p.version)}</span>` : '';
+      const scriptBadges = (p.scripts && p.scripts.length > 0)
+        ? `<span style="color:var(--signal-med);font-size:9px;margin-left:3px" title="${escapeHtml(p.scripts[0].output || '')}">📜</span>`
+        : '';
+      html += `<span class="investigate-open-port" style="border-color:${borderColor}">
+        <span class="port-num">${p.port}</span>
+        <span class="port-svc">${p.service}${p.protocol === 'udp' ? '/udp' : ''}</span>
+        ${verStr}${scriptBadges}
+      </span>`;
+    });
+    html += '</div></div>';
+  } else {
+    html += '<div style="margin-bottom:8px;color:var(--text-faint);font-size:11px;font-style:italic">no ports found</div>';
+  }
+
+  // NSE scripts
+  if (d.scripts && d.scripts.length > 0) {
+    html += '<div style="margin-bottom:8px">';
+    html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-faint);margin-bottom:4px">NSE scripts</div>';
+    d.scripts.forEach(s => {
+      const output = s.output || '';
+      const truncated = output.length > 300 ? output.slice(0, 300) + '...' : output;
+      html += `<div style="font-size:11px;margin-bottom:4px">
+        <span style="color:var(--signal-med)">${escapeHtml(s.id)}</span>
+        <div class="nmap-script-output">${escapeHtml(truncated)}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  // Traceroute
+  if (d.traceroute && d.traceroute.hops && d.traceroute.hops.length > 0) {
+    html += '<div style="margin-bottom:8px">';
+    html += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-faint);margin-bottom:4px">traceroute</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:2px">';
+    d.traceroute.hops.forEach(h => {
+      html += `<span class="nmap-hop">
+        <span class="ttl">${h.ttl}</span>
+        <span class="ip">${escapeHtml(h.ip)}</span>
+        ${h.rtt ? `<span style="color:var(--text-faint)">${h.rtt}</span>` : ''}
+      </span>`;
+    });
+    html += '</div></div>';
+  }
+
+  // Toggle raw XML
+  if (d.raw_xml_size > 0) {
+    html += `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line)">
+      <button class="filter-btn" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="font-size:9px;color:var(--text-faint)">
+        ${d.raw_xml_size} bytes XML output
+      </button>
+      <div style="display:none;margin-top:6px;font-size:9px;color:var(--text-faint);max-height:200px;overflow-y:auto;white-space:pre-wrap">
+        (raw nmap XML — hidden for performance)
+      </div>
+    </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+document.getElementById('nmap-recon-btn').addEventListener('click', () => openNmapRecon(''));
+document.getElementById('nmap-recon-close').addEventListener('click', () => {
+  document.getElementById('nmap-recon-overlay').classList.remove('open');
+});
+document.getElementById('nmap-recon-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) document.getElementById('nmap-recon-overlay').classList.remove('open');
+});
+document.getElementById('nmap-from-clipboard').addEventListener('click', () => {
+  navigator.clipboard.readText().then(text => {
+    const ip = text.trim();
+    if (ip) document.getElementById('nmap-target-ip').value = ip;
+  }).catch(() => showToast('Clipboard access denied'));
+});
+// Enter key triggers quick scan
+document.getElementById('nmap-target-ip').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runNmapRecon('quick');
+});
+
+</script>
+</body>
+</html>

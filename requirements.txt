@@ -1,0 +1,12 @@
+# Lilith — runtime dependencies (kept in sync with pyproject.toml)
+# Install with:  pip install -r requirements.txt
+fastapi
+uvicorn[standard]
+psutil
+requests
+dnspython
+
+# --- Optional extras ---
+# ETW real-time kernel-network capture (lilith/etw_capture.py). Windows + admin only.
+#   pip install pywintrace        (or: uv sync --extra etw)
+# pywintrace

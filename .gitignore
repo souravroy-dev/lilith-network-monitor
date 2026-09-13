@@ -1,0 +1,33 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Runtime database (auto-created on first run)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Test artifacts at the project root only
+/test_*.py
+/test_*.db
+
+# OS junk
+Thumbs.db
+.DS_Store
+nul
+NUL
+
+# Nmap / Npcap binary installers (large downloads)
+bin/*.exe
+bin/*.msi
+bin/*.zip
+bin/*.7z

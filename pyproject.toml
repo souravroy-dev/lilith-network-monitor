@@ -1,0 +1,18 @@
+[project]
+name = "lilith"
+version = "0.2.0"
+description = "Lilith — passive, system-wide network security monitor for Windows with a 5-stage triage pipeline and live dashboard"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "dnspython>=2.8.0",
+    "fastapi>=0.139.2",
+    "psutil>=6.0.0",
+    "requests>=2.34.2",
+    "uvicorn[standard]>=0.51.0",
+]
+
+[project.optional-dependencies]
+etw = [
+    "pywintrace>=0.2.0",
+]
